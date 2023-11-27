@@ -2,6 +2,9 @@
 #Modified version of the original Adafruit code, and educ8's guide: 
 #https://github.com/adafruit/Adafruit_CircuitPython_PCD8544/blob/main/examples/pcd8544_simpletest.py
 
+# UART Code taken from:
+# https://learn.adafruit.com/uart-communication-between-two-circuitpython-boards/code
+
 import time
 import board
 import busio
@@ -45,6 +48,15 @@ observeButton = digitalio.DigitalInOut(board.GP21) # Pin 27
 modeButton.switch_to_input(pull=digitalio.Pull.DOWN)
 observeButton.switch_to_input(pull=digitalio.Pull.DOWN)
 
+# UART - TX
+"""
+NOTE: The TX/RX wires need to be connected to *different* UART
+outputs on the Pico (e.g. output on UART1, receive on UART0), otherwise
+the outputs will interfere.
+"""
+uartTX = busio.UART(board.GP4, board.GP5, baudrate=9600, timeout=0)
+uartRX = busio.UART(board.GP16, board.GP17, baudrate=9600, timeout=0)
+
 #####################
 # Mode Logic
 #####################
@@ -55,6 +67,9 @@ MODE = "KIND"
 #####################
 OBSERVED = False
 observedValue = None
+
+# Value received over UART
+rcvdValue = None
 
 # Kind Scrolling
 kindRow = 0
@@ -150,8 +165,8 @@ def doJoystick():
             kindScrollUp()
 
 
-def displayWrappedText(text):
-    displayRow = 0
+def displayWrappedText(text, startRow=0):
+    displayRow = startRow
     displayCol = 0
     for i in range(len(text)):
         if text[i] == "\n":
@@ -192,11 +207,19 @@ def observe():
     value = random.uniform(1, 10)
     observedValue = value
     switchMode("VALUE")
+
+"""
+TEMPORARY: Display the received value on the screen
+"""
+def modeRCVD():
+    display.text("Received :-)", 0, 0, 1)
+    displayWrappedText(str(rcvdValue), startRow=1)
     
     
 jumpTable = {
     "KIND": modeKind,
-    "VALUE": modeValue
+    "VALUE": modeValue,
+    "RCVD": modeRCVD
 }
 
 def switchMode(mode):
@@ -205,11 +228,24 @@ def switchMode(mode):
     MODE = mode
     jumpTable[MODE]()
 
+#########################
+# LOOP VARIABLES
+#########################
+UPDATE_INTERVAL = 3.0
+last_time_sent = 0
+
+# Wait for the beginning of a message.
+message_started = False
+
 prevModeButtonState = modeButton.value
 prevObserveButtonState = observeButton.value
 while True:
+    ##########################
+    # Loop Variables
+    ##########################
     modeButtonState = modeButton.value
     observeButtonState = observeButton.value
+    now = time.monotonic()
 
     jumpTable[MODE]()
     
@@ -224,7 +260,42 @@ while True:
     elif observeButtonState != prevObserveButtonState and observeButtonState:
         observe()
 
+    # TEMPORARY: Received Value Display
+    if rcvdValue != None:
+        switchMode("RCVD")
+    
     time.sleep(0.1)
     display.fill(0)
+
+    # UART Attempt - TX
+    if now - last_time_sent >= UPDATE_INTERVAL and OBSERVED:
+        uartTX.write(bytes(f"<v,{observedValue}>", "ascii"))
+        print("Transmitting observed value")
+        last_time_sent = now
+
+    # UART - RX
+    byte_read = uartRX.read(1)  # Read one byte over UART lines
+    if not byte_read:
+        # Nothing read.
+        continue
+    if byte_read == b"<":
+        # Start of message. Start accumulating bytes, but don't record the "<".
+        message = []
+        message_started = True
+        continue
+
+    if message_started:
+        if byte_read == b">":
+            # End of message. Don't record the ">".
+            # Now we have a complete message. Convert it to a string, and split it up.
+            print(message)
+            message_parts = "".join(message).split(",")
+            message_type = message_parts[0]
+            message_started = False
+
+            rcvdValue = float("".join(message[2:]))
+        else:
+            # Accumulate message byte.
+            message.append(chr(byte_read[0]))
 
     prevModeButtonState = modeButtonState
