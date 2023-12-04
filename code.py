@@ -208,6 +208,7 @@ while True:
         else:
             switchMode("KIND")
     elif observeButtonState != prevObserveButtonState and observeButtonState:
+        print("Observed!")
         frp.observe()
         switchMode("VALUE")
 
