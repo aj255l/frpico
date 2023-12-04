@@ -22,7 +22,7 @@ def identity(x: A) -> A:
     "Returns its argument."
     return x
 
-def const(a: A) -> Callable[[Any], A]:
+def toConst(a: A) -> Callable[[Any], A]:
     "Returns a constant function that returns the given value."
     def const_fn(x: Any) -> A:
         return a
@@ -326,7 +326,7 @@ setattr(codim, '__info__', 'utilities')
 setattr(size, '__info__', 'utilities')
 setattr(values, '__info__', 'utilities')
 setattr(identity, '__info__', 'utilities')
-setattr(const, '__info__', 'utilities')
+setattr(toConst, '__info__', 'utilities')
 setattr(compose, '__info__', 'utilities')
 setattr(irange, '__info__', 'utilities::irange')
 setattr(index_of, '__info__', 'utilities::index_of')

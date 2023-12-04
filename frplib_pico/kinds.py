@@ -23,7 +23,7 @@ from frplib_pico.protocols  import Projection
 from frplib_pico.quantity   import as_quantity, as_nice_quantity, as_quant_vec, show_quantities, show_qtuples
 from frplib_pico.statistics import Condition, MonoidalStatistic, Statistic, compose2, Proj
 from frplib_pico.symbolic   import Symbolic, gen_symbol, is_symbolic, symbol
-from frplib_pico.utils      import compose, const, dim, identity, is_interactive, is_tuple, lmap
+from frplib_pico.utils      import compose, toConst, dim, identity, is_interactive, is_tuple, lmap
 from frplib_pico.vec_tuples import VecTuple, as_numeric_vec, as_scalar_strict, as_vec_tuple, vec_tuple
 
 
@@ -297,17 +297,14 @@ class Kind:
         vals2 = kind2.value_set
 
         if vals1 != vals2:
-            return RichString(f'The two kinds [bold red]differ[/]. '
-                              f'The first has distinct values [red]{set(map(str, vals1 - vals2))}[/] and '
-                              f'the second has distinct values [red]{set(map(str, vals2 - vals1))}[/].')
+            return RichString(f'The two kinds [bold red]differ[/]. The first has distinct values [red]{set(map(str, vals1 - vals2))}[/] and the second has distinct values [red]{set(map(str, vals2 - vals1))}[/].')
 
         w1 = kind1.weights
         w2 = kind2.weights
 
         for v in vals1:
             if as_nice_numeric(as_real(w1[v] - w2[v]).copy_abs()) >= tol:
-                return RichString(f'The two kinds [bold red]differ[/] in their weights, '
-                                  f'e.g., at value [bold]{v}[/], the weights are [red]{w1[v]}[/] and [red]{w2[v]}[/].')
+                return RichString(f'The two kinds [bold red]differ[/] in their weights, e.g., at value [bold]{v}[/], the weights are [red]{w1[v]}[/] and [red]{w2[v]}[/].')
 
         return RichString('The two kinds are the [bold green]same[/] within numerical precision.')
 
@@ -473,8 +470,7 @@ class Kind:
                     statistic(self._canonical[0].vs)
                     f = statistic
                 except Exception:
-                    raise KindError(f'Statistic {statistic.name} is incompatible with this kind: '
-                                    f'acceptable dimension [{lo},{hi}] but kind dimension {self.dim}.')
+                    raise KindError(f'Statistic {statistic.name} is incompatible with this kind: acceptable dimension [{lo},{hi}] but kind dimension {self.dim}.')
         else:
             f = compose(as_vec_tuple, value_map(statistic))  # ATTN!
         return self.map(f)
@@ -777,9 +773,7 @@ class TaggedKind(Kind):
 
         lo, hi = stat.dim
         if self.dim < lo or self.dim > hi:
-            raise MismatchedDomain(f'Statistic {stat.name} is incompatible with this Kind, '
-                                   f'which has dimension {self.dim} out of expected range '
-                                   f'[{lo}, {"infinity" if hi == math.inf else hi}].')
+            raise MismatchedDomain(f'Statistic {stat.name} is incompatible with this Kind, which has dimension {self.dim} out of expected range [{lo}, {"infinity" if hi == math.inf else hi}].')
 
     def __or__(self, condition):
         return self._original.__or__(condition).transform(self._stat)
@@ -948,11 +942,9 @@ def sequence_of_values(
             elif c == b:  # pair, drop b
                 values.pop()
             elif (a - b) * (b - c) <= 0:
-                raise KindError(f'Argument ... to {parent or "a factory"} must be appear in the pattern a, b, ..., c '
-                                f'with a < b < c or a > b > c.')
+                raise KindError(f'Argument ... to {parent or "a factory"} must be appear in the pattern a, b, ..., c with a < b < c or a > b > c.')
             elif numeric_abs(c - b) > numeric_abs(b - a) * ELLIPSIS_MAX_LENGTH:
-                raise KindError(f'Argument ... to {parent or "a factory"} will lead to a very large sequence;'
-                                f"I'm guessing this is a mistake.")
+                raise KindError(f'Argument ... to {parent or "a factory"} will lead to a very large sequence; I\'m guessing this is a mistake.')
             else:
                 values.extend([transform(b + k * (b - a))
                                for k in range(1, int(numeric_floor(as_real(c - b) / (b - a))))])
@@ -1229,7 +1221,8 @@ def weighted_as(*xs, weights: Iterable[ScalarQ | Symbolic] = []) -> Kind:
 
     kweights: list[Union[Numeric, Symbolic]] = sequence_of_values(*weights, flatten=Flatten.NON_TUPLES)
     if len(kweights) < len(values):
-        kweights = [*kweights, *([1] * (len(values) - len(kweights)))]
+        subList = [1] * (len(values) - len(kweights))
+        kweights = kweights + subList
 
     return Kind([KindBranch.make(vs=as_quant_vec(x), p=as_quantity(w))
                  for x, w in zip(values, kweights)])
@@ -1406,7 +1399,7 @@ class ConditionalKind:
         self._original_fn: Callable[[ValueType], Kind] | None = None
 
         if isinstance(mapping, Kind):
-            mapping = const(mapping)
+            mapping = toConst(mapping)
 
         if isinstance(mapping, dict):
             self._mapping: dict[ValueType, Kind] = {as_quant_vec(k): v for k, v in mapping.items()}
@@ -1427,12 +1420,10 @@ class ConditionalKind:
                     raise MismatchedDomain('A conditional Kind requires an argument, none were passed.')
                 if isinstance(args[0], tuple):
                     if self._codim and len(args[0]) != self._codim:
-                        raise MismatchedDomain(f'A value of dimension {len(args[0])} passed to a'
-                                               f' conditional Kind of mismatched codim {self._codim}.')
+                        raise MismatchedDomain(f'A value of dimension {len(args[0])} passed to a conditional Kind of mismatched codim {self._codim}.')
                     value = as_quant_vec(args[0])   # ATTN: VecTuple better here?
                 elif self._codim and len(args) != self._codim:
-                    raise MismatchedDomain(f'A value of dimension {len(args)} passed to a '
-                                           f'conditional Kind of mismatched codim {self._codim}.')
+                    raise MismatchedDomain(f'A value of dimension {len(args)} passed to a conditional Kind of mismatched codim {self._codim}.')
                 else:
                     value = as_quant_vec(args)
                 if value not in self._mapping:
@@ -1450,12 +1441,10 @@ class ConditionalKind:
                     raise MismatchedDomain('A conditional Kind requires an argument, none were passed.')
                 if isinstance(args[0], tuple):
                     if self._codim and len(args[0]) != self._codim:
-                        raise MismatchedDomain(f'A value of dimension {len(args[0])} passed to a'
-                                               f' conditional Kind of mismatched codim {self._codim}.')
+                        raise MismatchedDomain(f'A value of dimension {len(args[0])} passed to a conditional Kind of mismatched codim {self._codim}.')
                     value = as_quant_vec(args[0])
                 elif self._codim and len(args) != self._codim:
-                    raise MismatchedDomain(f'A value of dimension {len(args)} passed to a '
-                                           f'conditional Kind of mismatched codim {self._codim}.')
+                    raise MismatchedDomain(f'A value of dimension {len(args)} passed to a conditional Kind of mismatched codim {self._codim}.')
                 else:
                     value = as_quant_vec(args)
                 if self._domain and value not in self._domain:
@@ -1523,8 +1512,7 @@ class ConditionalKind:
             val_set = set(values)
             overlap = self._mapping.keys() & val_set
             if overlap < val_set:   # superset of values is ok
-                return (f'A conditional kind is not defined on all the values requested of it: '
-                        f'missing {val_set - overlap}')
+                return (f'A conditional kind is not defined on all the values requested of it: missing {val_set - overlap}')
 
             value_dims = {k.dim for k in self._mapping.values()}
             if len(value_dims) != 1:
@@ -1579,8 +1567,7 @@ class ConditionalKind:
                             ' Consider passing this tranform to `conditional_kind` first.')
         lo, hi = statistic.dim
         if self._dim is not None and (self._dim < lo or self._dim > hi):
-            raise KindError(f'Statistic {statistic.name} is incompatible with this kind: '
-                            f'acceptable dimension [{lo},{hi}] but kind dimension {self._dim}.')
+            raise KindError(f'Statistic {statistic.name} is incompatible with this kind: acceptable dimension [{lo},{hi}] but kind dimension {self._dim}.')
         if self._is_dict:
             return ConditionalKind({k: statistic(v) for k, v in self._mapping.items()})
 

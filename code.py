@@ -13,6 +13,8 @@ from analogio import AnalogIn
 import adafruit_pcd8544
 from adafruit_simplemath import map_range
 import random
+from frp_pico import FRP_Pico
+from frplib_pico.kinds import uniform, weighted_as
 
 ########################
 # SETUP
@@ -65,48 +67,15 @@ MODE = "KIND"
 #####################
 # Other Globals
 #####################
-OBSERVED = False
-observedValue = None
-
 # Value received over UART
 rcvdValue = None
 
-# Kind Scrolling
-kindRow = 0
-kindCol = 0
+# For now, we just create FRPs by hardcoding them here:
+frp = FRP_Pico(uniform([1, 2, 3]))
 
 # Placeholder kinds
-smallKind = """───────────
- ,- 2/9 - 3
--+- 6/9 - 4
- `- 1/9 - 5
-───────────
-"""
-bigKind = """───────────────┐
-  ,- 0.05 - 0  │
-  |- 0.05 - 1  │
-  |- 0.05 - 2  │
-  |- 0.05 - 3  │
-  |- 0.05 - 4  │
-  |- 0.05 - 5  │
-  |- 0.05 - 6  │
-  |- 0.05 - 7  │
-  |- 0.05 - 8  │
-  |- 0.05 - 9  │
- -|            │
-  |- 0.05 - 10 │
-  |- 0.05 - 11 │
-  |- 0.05 - 12 │
-  |- 0.05 - 13 │
-  |- 0.05 - 14 │
-  |- 0.05 - 15 │
-  |- 0.05 - 16 │
-  |- 0.05 - 17 │
-  |- 0.05 - 18 │
-  `- 0.05 - 19 │
-───────────────┘
-"""
-KINDSTR = bigKind
+smallKind = FRP_Pico(weighted_as([3, 4, 5], weights=[2, 6, 1]))
+bigKind = FRP_Pico(uniform(range(20)))
 
 # Clear the display.  Always call show after changing pixels to make the display
 # update visible!
@@ -114,14 +83,13 @@ display.fill(0)
 display.show()
 
 def modeKind():
-    kind = KINDSTR
-    observedText = "OBSERVED" if OBSERVED else "UNOBSERVED" 
+    observedText = "OBSERVED" if frp.isObserved() else "UNOBSERVED" 
     display.text(observedText, 0, 0, 1)
 
-    lines = list(kind.splitlines())
+    lines = frp.display()
 
     displayRow = 0
-    for rowIdx in range(kindRow, len(lines)):
+    for rowIdx in range(frp.kindRow, len(lines)):
         row = lines[rowIdx]
         textY = (displayRow + 1) * 8
         display.text(row, 0, textY, 1)
@@ -145,25 +113,18 @@ def getJoystickDirection():
     elif yValue >= 240:
         return "UP"
 
-def kindScrollDown():
-    global kindRow
-    kindRows = len(list(KINDSTR.splitlines()))    
-
-    kindRow = min(kindRow + 1, kindRows)
-
-def kindScrollUp():
-    global kindRow
-    kindRow = max(0, kindRow - 1)
-
 def doJoystick():
     direction = getJoystickDirection()
     
     if MODE == "KIND":
         if direction == "DOWN":
-            kindScrollDown()
+            frp.scrollDown()
         elif direction == "UP":
-            kindScrollUp()
-
+            frp.scrollUp()
+        elif direction == "LEFT":
+            frp.scrollLeft()
+        elif direction == "RIGHT":
+            frp.scrollRight()
 
 def displayWrappedText(text, startRow=0):
     displayRow = startRow
@@ -192,28 +153,18 @@ def displayWrappedText(text, startRow=0):
 Display the value of the observed FRP on the screen, or that it is unobserved.
 """
 def modeValue():
-    if not OBSERVED:
+    if not frp.isObserved():
         displayWrappedText("Nothing to see here. FRP is UNOBSERVED.")
         return
 
-    valueStr = str(observedValue)
-    displayWrappedText(valueStr)
-
-def observe():
-    global OBSERVED
-    global observedValue
-    OBSERVED = True
-
-    value = random.uniform(1, 10)
-    observedValue = value
-    switchMode("VALUE")
+    displayWrappedText(frp.getObserved())
 
 """
 TEMPORARY: Display the received value on the screen
 """
 def modeRCVD():
     display.text("Received :-)", 0, 0, 1)
-    displayWrappedText(str(rcvdValue), startRow=1)
+    displayWrappedText(rcvdValue, startRow=1)
     
     
 jumpTable = {
@@ -258,7 +209,8 @@ while True:
         else:
             switchMode("KIND")
     elif observeButtonState != prevObserveButtonState and observeButtonState:
-        observe()
+        frp.observe()
+        switchMode("VALUE")
 
     # TEMPORARY: Received Value Display
     if rcvdValue != None:
@@ -268,8 +220,8 @@ while True:
     display.fill(0)
 
     # UART Attempt - TX
-    if now - last_time_sent >= UPDATE_INTERVAL and OBSERVED:
-        uartTX.write(bytes(f"<v,{observedValue}>", "ascii"))
+    if now - last_time_sent >= UPDATE_INTERVAL and frp.isObserved:
+        uartTX.write(bytes(f"<v,{frp.getObserved()}>", "ascii"))
         print("Transmitting observed value")
         last_time_sent = now
 
@@ -293,7 +245,7 @@ while True:
             message_type = message_parts[0]
             message_started = False
 
-            rcvdValue = float("".join(message[2:]))
+            rcvdValue = "".join(message[2:])
         else:
             # Accumulate message byte.
             message.append(chr(byte_read[0]))
