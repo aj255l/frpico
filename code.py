@@ -12,9 +12,7 @@ import digitalio, displayio
 from analogio import AnalogIn
 import adafruit_pcd8544
 from adafruit_simplemath import map_range
-import random
-from frp_pico import FRP_Pico
-from frplib_pico.kinds import uniform, weighted_as
+from frp_pico import FRP, Kind
 
 ########################
 # SETUP
@@ -71,11 +69,12 @@ MODE = "KIND"
 rcvdValue = None
 
 # For now, we just create FRPs by hardcoding them here:
-frp = FRP_Pico(uniform([1, 2, 3]))
+frp = FRP(Kind(zip(range(20), [1] * 20)))
 
 # Placeholder kinds
-smallKind = FRP_Pico(weighted_as([3, 4, 5], weights=[2, 6, 1]))
-bigKind = FRP_Pico(uniform(range(20)))
+# YOU CAN ONLY INPUT INTEGERS FOR THE WEIGHTS, DO NOT USE FLOATS
+# smallKind = FRP_Pico(weighted_as([3, 4, 5], weights=[2, 6, 1]))
+# bigKind = FRP_Pico(uniform(range(20)))
 
 # Clear the display.  Always call show after changing pixels to make the display
 # update visible!
@@ -86,11 +85,11 @@ def modeKind():
     observedText = "OBSERVED" if frp.isObserved() else "UNOBSERVED" 
     display.text(observedText, 0, 0, 1)
 
-    lines = frp.display()
+    lines = frp.kind.display().splitlines()
 
     displayRow = 0
-    for rowIdx in range(frp.kindRow, len(lines)):
-        row = lines[rowIdx]
+    for rowIdx in range(frp.kind.row, len(lines)):
+        row = lines[rowIdx][frp.kind.col:frp.kind.cols]
         textY = (displayRow + 1) * 8
         display.text(row, 0, textY, 1)
         
@@ -118,13 +117,13 @@ def doJoystick():
     
     if MODE == "KIND":
         if direction == "DOWN":
-            frp.scrollDown()
+            frp.kind.scrollDown()
         elif direction == "UP":
-            frp.scrollUp()
+            frp.kind.scrollUp()
         elif direction == "LEFT":
-            frp.scrollLeft()
+            frp.kind.scrollLeft()
         elif direction == "RIGHT":
-            frp.scrollRight()
+            frp.kind.scrollRight()
 
 def displayWrappedText(text, startRow=0):
     displayRow = startRow
