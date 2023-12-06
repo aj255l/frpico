@@ -41,6 +41,8 @@ display.contrast = 46
 # Joystick Pins
 joystickVRX = AnalogIn(board.GP27)
 joystickVRY = AnalogIn(board.GP26)
+joystickSwitch = digitalio.DigitalInOut(board.GP22)
+joystickSwitch.switch_to_input(pull=digitalio.Pull.UP)
 
 # Mode and Setup Buttons
 modeButton = digitalio.DigitalInOut(board.GP20) # Pin 26
@@ -70,11 +72,6 @@ rcvdValue = None
 
 # For now, we just create FRPs by hardcoding them here:
 frp = FRP(Kind(zip(range(20), [1] * 20)))
-
-# Placeholder kinds
-# YOU CAN ONLY INPUT INTEGERS FOR THE WEIGHTS, DO NOT USE FLOATS
-# smallKind = FRP_Pico(weighted_as([3, 4, 5], weights=[2, 6, 1]))
-# bigKind = FRP_Pico(uniform(range(20)))
 
 # Clear the display.  Always call show after changing pixels to make the display
 # update visible!
@@ -126,6 +123,8 @@ def doJoystick():
             frp.kind.scrollRight()
 
 def displayWrappedText(text, startRow=0):
+    if not isinstance(text, str):
+        text = str(text)
     displayRow = startRow
     displayCol = 0
     for i in range(len(text)):
@@ -189,12 +188,15 @@ message_started = False
 
 prevModeButtonState = modeButton.value
 prevObserveButtonState = observeButton.value
+prevJoystickSwitchState = joystickSwitch.value
 while True:
     ##########################
     # Loop Variables
     ##########################
     modeButtonState = modeButton.value
     observeButtonState = observeButton.value
+    joystickSwitchState = joystickSwitch.value
+    print("Current:", joystickSwitchState)
     now = time.monotonic()
 
     jumpTable[MODE]()
@@ -208,13 +210,19 @@ while True:
         else:
             switchMode("KIND")
     elif observeButtonState != prevObserveButtonState and observeButtonState:
-        print("Observed!")
         frp.observe()
         switchMode("VALUE")
+    elif joystickSwitchState != prevJoystickSwitchState and (not joystickSwitchState):
+        # Reset FRP
+        frp.observed = None
 
     # TEMPORARY: Received Value Display
     if rcvdValue != None:
         switchMode("RCVD")
+
+    prevModeButtonState = modeButtonState
+    prevObserveButtonState = observeButtonState
+    prevJoystickSwitchState = joystickSwitchState
     
     time.sleep(0.1)
     display.fill(0)
@@ -249,5 +257,3 @@ while True:
         else:
             # Accumulate message byte.
             message.append(chr(byte_read[0]))
-
-    prevModeButtonState = modeButtonState

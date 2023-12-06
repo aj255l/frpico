@@ -144,6 +144,9 @@ class FRP:
     def display(self):
         return self.kind.display()
 
+    def reset(self):
+        self.observed = None
+
 class ConditionalFRP(FRP):
     def __init__(self, kind: ConditionalKind):
         super().__init__(kind)
@@ -174,3 +177,7 @@ class ConditionalFRP(FRP):
         if self.given is None:
             return self.kind.display()
         return self.given.display()
+
+    def reset(self):
+        self.observed = None
+        self.given = None
