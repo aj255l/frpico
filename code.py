@@ -12,7 +12,8 @@ import digitalio, displayio
 from analogio import AnalogIn
 import adafruit_pcd8544
 from adafruit_simplemath import map_range
-from frp_pico import FRP, Kind
+from frp_pico import *
+from presets import *
 
 ########################
 # SETUP
@@ -71,7 +72,7 @@ MODE = "KIND"
 rcvdValue = None
 
 # For now, we just create FRPs by hardcoding them here:
-frp = FRP(Kind(zip(range(20), [1] * 20)))
+frp = FRP(uniform([1, 2]))
 
 # Clear the display.  Always call show after changing pixels to make the display
 # update visible!
@@ -82,7 +83,7 @@ def modeKind():
     observedText = "OBSERVED" if frp.isObserved() else "UNOBSERVED" 
     display.text(observedText, 0, 0, 1)
 
-    lines = frp.kind.display().splitlines()
+    lines = frp.display().splitlines()
 
     displayRow = 0
     for rowIdx in range(frp.kind.row, len(lines)):
@@ -196,7 +197,6 @@ while True:
     modeButtonState = modeButton.value
     observeButtonState = observeButton.value
     joystickSwitchState = joystickSwitch.value
-    print("Current:", joystickSwitchState)
     now = time.monotonic()
 
     jumpTable[MODE]()
@@ -216,9 +216,11 @@ while True:
         # Reset FRP
         frp.observed = None
 
-    # TEMPORARY: Received Value Display
+    # # TEMPORARY: Received Value Display
+    # if rcvdValue != None:
+    #     switchMode("RCVD")
     if rcvdValue != None:
-        switchMode("RCVD")
+        frp.giveObserved(rcvdValue)
 
     prevModeButtonState = modeButtonState
     prevObserveButtonState = observeButtonState
@@ -228,9 +230,13 @@ while True:
     display.fill(0)
 
     # UART Attempt - TX
-    if now - last_time_sent >= UPDATE_INTERVAL and frp.isObserved:
-        uartTX.write(bytes(f"<v,{frp.getObserved()}>", "ascii"))
-        print("Transmitting observed value")
+    if now - last_time_sent >= UPDATE_INTERVAL and frp.isObserved():
+        observedValue = frp.getObserved()
+        if isinstance(observedValue, float):
+            uartTX.write(bytes(f"<f,{observedValue}>", "ascii"))
+        else:
+            uartTX.write(bytes(f"<i,{observedValue}>", "ascii"))
+        print(f"Transmitting observed value, {observedValue}")
         last_time_sent = now
 
     # UART - RX
@@ -253,7 +259,10 @@ while True:
             message_type = message_parts[0]
             message_started = False
 
-            rcvdValue = "".join(message[2:])
+            if message[0] == 'i':
+                rcvdValue = int("".join(message[2:]))
+            else:
+                rcvdValue = float("".join(message[2:]))
         else:
             # Accumulate message byte.
             message.append(chr(byte_read[0]))
