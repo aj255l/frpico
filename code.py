@@ -37,7 +37,7 @@ backlight.switch_to_output()
 backlight.value = True
 
 display.bias = 5
-display.contrast = 46
+display.contrast = 50
 
 # Joystick Pins
 joystickVRX = AnalogIn(board.GP27)
@@ -74,6 +74,28 @@ rcvdValue = None
 # For now, we just create FRPs by hardcoding them here:
 frp = FRP(uniform([1, 2]))
 
+# Menu Screen
+presetRow = 0
+presets = [
+    ("Uniform 1-10", uniform(list(range(1, 11)))),
+    ("Coin Flip", uniform([1, 2])),
+    ("Biased Coin", weighted([0, 1], [2, 1])),
+    ("Biased Coin2", weighted([0, 1], [2, 1])),
+    ("Biased Coin3", weighted([0, 1], [2, 1])),
+    ("Biased Coin4", weighted([0, 1], [2, 1])),
+    ("Biased Coin5", weighted([0, 1], [2, 1])),
+    # ("Conditional", ConditionalKind({i : uniform([i, i + 1]) for i in range(1, 11)}))
+]
+
+# Mode selection screen
+modeRow = 0
+MENU_MODES = [
+        "KIND",
+        "VALUE",
+        "CONTRAST",
+        "PRESETS"
+    ]
+
 # Clear the display.  Always call show after changing pixels to make the display
 # update visible!
 display.fill(0)
@@ -102,13 +124,13 @@ def getJoystickDirection():
 
     # Some directions - I don't know if they make sense
     if xValue <= 10:
-        return "LEFT"
-    elif xValue >= 240:
-        return "RIGHT"
-    elif yValue <= 10:
         return "DOWN"
-    elif yValue >= 240:
+    elif xValue >= 240:
         return "UP"
+    elif yValue <= 10:
+        return "LEFT"
+    elif yValue >= 240:
+        return "RIGHT"
 
 def doJoystick():
     direction = getJoystickDirection()
@@ -122,6 +144,23 @@ def doJoystick():
             frp.kind.scrollLeft()
         elif direction == "RIGHT":
             frp.kind.scrollRight()
+    elif MODE == "PRESETS":
+        global presetRow
+        if direction == "DOWN":
+            presetRow = min(len(presets) - 1, presetRow + 1)
+        elif direction == "UP":
+            presetRow = max(0, presetRow - 1)
+    elif MODE == "CONTRAST":
+        if direction == "UP":
+            display.contrast = min(70, display.contrast + 1)
+        elif direction == "DOWN":
+            display.contrast = max(0, display.contrast - 1)
+    elif MODE == "MENU":
+        global modeRow
+        if direction == "DOWN":
+            modeRow = min(len(MENU_MODES) - 1, modeRow + 1)
+        elif direction == "UP":
+            modeRow = max(0, modeRow - 1)
 
 def displayWrappedText(text, startRow=0):
     if not isinstance(text, str):
@@ -164,12 +203,77 @@ TEMPORARY: Display the received value on the screen
 def modeRCVD():
     display.text("Received :-)", 0, 0, 1)
     displayWrappedText(rcvdValue, startRow=1)
+
+"""
+Menu Screen
+"""
+def modePreset():
+    display.text("Presets".center(15), 0, 0, 1)
+    display.line(0, 8, 84, 8, 1)
+
+    startY = 10
+    fontHeight = 8
+    for i in range(4): # Can display 4 at once
+        displayX = 0
+        displayY = startY + fontHeight*i
+
+        presetIdx = presetRow + i
+        if presetIdx >= len(presets):
+            # Out of range
+            break
+
+        presetName, _ = presets[presetIdx]
+        if presetIdx == presetRow:
+            presetName = "> " + presetName
+        display.text(presetName, displayX, displayY, 1)
+
+    display.show()
+
+"""
+Contrast Screen
+"""
+def modeContrast():
+    display.text("Contrast".center(15), 0, 0, 1)
+    display.line(0, 8, 84, 8, 1)
+
+    display.text(str(display.contrast), 0, 10, 1)
+
+    display.show()
     
+"""
+Mode Select Screen
+"""
+def modeMenu():
+    display.text("Menu".center(15), 0, 0, 1)
+    display.line(0, 8, 84, 8, 1)
+
+    startY = 10
+    fontHeight = 8
+    for i in range(4): # Can display 4 at once
+        displayX = 0
+        displayY = startY + fontHeight*i
+
+        modeIdx = modeRow + i
+        if modeIdx >= len(MENU_MODES):
+            # Out of range
+            break
+
+        modeName = MENU_MODES[modeIdx]
+        modeName = modeName[0] + modeName[1:].lower()
+        if modeIdx == modeRow:
+            modeName = "> " + modeName 
+        display.text(modeName, displayX, displayY, 1)
+
+    display.show()
+
     
 jumpTable = {
     "KIND": modeKind,
     "VALUE": modeValue,
-    "RCVD": modeRCVD
+    "RCVD": modeRCVD,
+    "MENU": modeMenu,
+    "CONTRAST": modeContrast,
+    "PRESETS": modePreset,
 }
 
 def switchMode(mode):
@@ -205,21 +309,41 @@ while True:
 
     # Handle Button Presses
     if modeButtonState != prevModeButtonState and modeButtonState:
-        if MODE == "KIND":
-            switchMode("VALUE")
-        else:
-            switchMode("KIND")
+        # if MODE == "KIND":
+        #     switchMode("VALUE")
+        # elif MODE == "VALUE":
+        #     switchMode("MENU")
+        # elif MODE == "MENU":
+        #     switchMode("CONTRAST")
+        # elif MODE == "CONTRAST":
+        #     switchMode("KIND")
+        modeRow = 0
+        switchMode("MENU")
+
     elif observeButtonState != prevObserveButtonState and observeButtonState:
         frp.observe()
         switchMode("VALUE")
     elif joystickSwitchState != prevJoystickSwitchState and (not joystickSwitchState):
         # Reset FRP
-        frp.observed = None
+        if MODE == "KIND" and frp.isObserved():
+            frp.observed = None
+
+        # Select on the menu screen
+        if MODE == "PRESETS":
+            kind = presets[presetRow][1]
+            if isinstance(kind, ConditionalKind):
+                frp = ConditionalFRP(kind)
+            else:
+                frp = FRP(kind)
+            switchMode("KIND")
+        elif MODE == "MENU":
+            switchMode(MENU_MODES[modeRow])
+
 
     # # TEMPORARY: Received Value Display
-    # if rcvdValue != None:
-    #     switchMode("RCVD")
     if rcvdValue != None:
+        switchMode("RCVD")
+    if rcvdValue != None and isinstance(frp, ConditionalFRP):
         frp.giveObserved(rcvdValue)
 
     prevModeButtonState = modeButtonState
