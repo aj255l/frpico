@@ -115,7 +115,10 @@ class ConditionalKind(Kind):
         lines = []
         for value in sorted(self.mapping.keys()):
             kind = self.mapping[value]
-            lines.append(kind.display(prepend=f'{value}: '.ljust(vWidth)))
+            s = f'{value:} '
+            while len(s) < vWidth:
+                s += ' '
+            lines.append(kind.display(prepend=s))
 
         return '\n\n'.join(lines)
 

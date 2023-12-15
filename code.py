@@ -37,7 +37,7 @@ backlight.switch_to_output()
 backlight.value = True
 
 display.bias = 5
-display.contrast = 50
+display.contrast = 30
 
 # Joystick Pins
 joystickVRX = AnalogIn(board.GP27)
@@ -74,18 +74,29 @@ rcvdValue = None
 # For now, we just create FRPs by hardcoding them here:
 frp = FRP(uniform([1, 2]))
 
+# Conditional FRP generation
+conditional = None
+conditionalValues = None
+conditionalValueIdx = 0
+
 # Menu Screen
 presetRow = 0
 presets = [
     ("Uniform 1-10", uniform(list(range(1, 11)))),
+    ("Dice Roll", uniform(list(range(1, 7)))),
     ("Coin Flip", uniform([1, 2])),
     ("Biased Coin", weighted([0, 1], [2, 1])),
-    ("Biased Coin2", weighted([0, 1], [2, 1])),
-    ("Biased Coin3", weighted([0, 1], [2, 1])),
-    ("Biased Coin4", weighted([0, 1], [2, 1])),
-    ("Biased Coin5", weighted([0, 1], [2, 1])),
-    # ("Conditional", ConditionalKind({i : uniform([i, i + 1]) for i in range(1, 11)}))
+    ("CONDITIONAL", None)
 ]
+
+cPresetRow = 0
+cPresets = [
+    ("0-1", [0, 1]),
+    ("1-2", [1, 2]),
+    ("1-6", [1, 2, 3, 4, 5, 6])
+]
+
+sPresetRow = 0
 
 # Mode selection screen
 modeRow = 0
@@ -144,12 +155,24 @@ def doJoystick():
             frp.kind.scrollLeft()
         elif direction == "RIGHT":
             frp.kind.scrollRight()
+    elif MODE == "CONDITIONAL":
+        global cPresetRow
+        if direction == "DOWN":
+            cPresetRow = min(len(cPresets) - 1, cPresetRow + 1)
+        elif direction == "UP":
+            cPresetRow = max(0, cPresetRow - 1)
     elif MODE == "PRESETS":
         global presetRow
         if direction == "DOWN":
             presetRow = min(len(presets) - 1, presetRow + 1)
         elif direction == "UP":
             presetRow = max(0, presetRow - 1)
+    elif MODE == "SELECTION":
+        global sPresetRow
+        if direction == "DOWN":
+            sPresetRow = min(len(presets) - 1, sPresetRow + 1)
+        elif direction == "UP":
+            sPresetRow = max(0, sPresetRow - 1)
     elif MODE == "CONTRAST":
         if direction == "UP":
             display.contrast = min(70, display.contrast + 1)
@@ -205,7 +228,7 @@ def modeRCVD():
     displayWrappedText(rcvdValue, startRow=1)
 
 """
-Menu Screen
+Preset Screen
 """
 def modePreset():
     display.text("Presets".center(15), 0, 0, 1)
@@ -230,6 +253,31 @@ def modePreset():
     display.show()
 
 """
+Conditional Preset Screen
+"""
+def modeConditional():
+    display.text("Select range".center(15), 0, 0, 1)
+    display.line(0, 8, 84, 8, 1)
+
+    startY = 10
+    fontHeight = 8
+    for i in range(4): # Can display 4 at once
+        displayX = 0
+        displayY = startY + fontHeight*i
+
+        cPresetIdx = cPresetRow + i
+        if cPresetIdx >= len(cPresets):
+            # Out of range
+            break
+
+        cPresetName, _ = cPresets[cPresetIdx]
+        if cPresetIdx == cPresetRow:
+            cPresetName = "> " + cPresetName
+        display.text(cPresetName, displayX, displayY, 1)
+
+    display.show()
+
+"""
 Contrast Screen
 """
 def modeContrast():
@@ -240,6 +288,31 @@ def modeContrast():
 
     display.show()
     
+"""
+Conditional Kind Selection Screen
+"""
+def modeSelection():
+    display.text(f"Select for {conditionalValues[conditionalValueIdx]}".center(15), 0, 0, 1)
+    display.line(0, 8, 84, 8, 1)
+
+    startY = 10
+    fontHeight = 8
+    for i in range(4): # Can display 4 at once
+        displayX = 0
+        displayY = startY + fontHeight*i
+
+        presetIdx = sPresetRow + i
+        if presetIdx >= len(presets) - 1:
+            # Out of range
+            break
+
+        presetName, _ = presets[presetIdx]
+        if presetIdx == sPresetRow:
+            presetName = "> " + presetName
+        display.text(presetName, displayX, displayY, 1)
+
+    display.show()
+
 """
 Mode Select Screen
 """
@@ -274,6 +347,8 @@ jumpTable = {
     "MENU": modeMenu,
     "CONTRAST": modeContrast,
     "PRESETS": modePreset,
+    "CONDITIONAL": modeConditional,
+    "SELECTION": modeSelection
 }
 
 def switchMode(mode):
@@ -331,18 +406,38 @@ while True:
         # Select on the menu screen
         if MODE == "PRESETS":
             kind = presets[presetRow][1]
-            if isinstance(kind, ConditionalKind):
-                frp = ConditionalFRP(kind)
+            if kind is None:
+                switchMode("CONDITIONAL")
             else:
                 frp = FRP(kind)
-            switchMode("KIND")
+                switchMode("KIND")
         elif MODE == "MENU":
             switchMode(MENU_MODES[modeRow])
 
+        # Select conditionals
+        elif MODE == "CONDITIONAL":
+            conditionalValues = cPresets[cPresetRow][1]
+            conditionalValueIdx = 0
+            conditional = dict()
+            switchMode("SELECTION")
+        elif MODE == "SELECTION":
+            # Map value to kind
+            kind = presets[sPresetRow][1]
+            value = conditionalValues[conditionalValueIdx]
+            conditional[value] = kind
+
+            sPresetRow = 0
+
+            # Move to next value
+            conditionalValueIdx += 1
+            if conditionalValueIdx >= len(conditionalValues):
+                frp = ConditionalFRP(ConditionalKind(conditional))
+                switchMode("KIND")
+
 
     # # TEMPORARY: Received Value Display
-    if rcvdValue != None:
-        switchMode("RCVD")
+    # if rcvdValue != None:
+    #     switchMode("RCVD")
     if rcvdValue != None and isinstance(frp, ConditionalFRP):
         frp.giveObserved(rcvdValue)
 
