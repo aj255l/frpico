@@ -37,7 +37,7 @@ backlight.switch_to_output()
 backlight.value = True
 
 display.bias = 5
-display.contrast = 30
+display.contrast = 50
 
 # Joystick Pins
 joystickVRX = AnalogIn(board.GP27)
@@ -170,7 +170,7 @@ def doJoystick():
     elif MODE == "SELECTION":
         global sPresetRow
         if direction == "DOWN":
-            sPresetRow = min(len(presets) - 1, sPresetRow + 1)
+            sPresetRow = min(len(presets) - 2, sPresetRow + 1)
         elif direction == "UP":
             sPresetRow = max(0, sPresetRow - 1)
     elif MODE == "CONTRAST":
@@ -402,6 +402,7 @@ while True:
         # Reset FRP
         if MODE == "KIND" and frp.isObserved():
             frp.observed = None
+            rcvdValue = None
 
         # Select on the menu screen
         if MODE == "PRESETS":
@@ -411,8 +412,10 @@ while True:
             else:
                 frp = FRP(kind)
                 switchMode("KIND")
+            presetRow = 0
         elif MODE == "MENU":
             switchMode(MENU_MODES[modeRow])
+            modeRow = 0
 
         # Select conditionals
         elif MODE == "CONDITIONAL":
@@ -420,6 +423,7 @@ while True:
             conditionalValueIdx = 0
             conditional = dict()
             switchMode("SELECTION")
+            cPresetRow = 0
         elif MODE == "SELECTION":
             # Map value to kind
             kind = presets[sPresetRow][1]
